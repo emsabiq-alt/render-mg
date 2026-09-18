@@ -1,6 +1,7 @@
 """
 render.py — Deterministic Headless Chromium Frame Renderer & Audio Stitcher.
 Support parallel rendering by scene range or frame range for GitHub Actions matrix.
+Supports both a041 project.json/render.html and legacy standalone explainer HTML.
 """
 from __future__ import annotations
 
@@ -18,9 +19,10 @@ from pathlib import Path
 import urllib.request
 import websocket
 
+
 def find_chrome():
     candidates = [
-        # Linux
+        # Linux (GitHub Actions Runner)
         "google-chrome",
         "google-chrome-stable",
         "chromium",
@@ -37,6 +39,7 @@ def find_chrome():
         if shutil.which(c) or Path(c).exists():
             return c
     raise RuntimeError("Chrome / Chromium tidak ditemukan di sistem!")
+
 
 class CDP:
     def __init__(self, port: int):
@@ -79,11 +82,13 @@ class CDP:
         except Exception:
             pass
 
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--html", default="kapal-virgo.html", help="Path HTML")
+    parser.add_argument("--html", default="", help="Path HTML")
     parser.add_argument("--audio-dir", default="audio", help="Folder file scXX.mp3")
-    parser.add_argument("--out", default="output/kapal_virgo_1080p.mp4", help="Output MP4")
+    parser.add_argument("--project-json", default="project.json", help="Path project.json")
+    parser.add_argument("--out", default="output/rendered_video.mp4", help="Output MP4")
     parser.add_argument("--fps", type=int, default=30, help="Frame rate")
     parser.add_argument("--width", type=int, default=1920)
     parser.add_argument("--height", type=int, default=1080)
@@ -92,19 +97,62 @@ def main():
     parser.add_argument("--chunk-name", default="chunk", help="Nama chunk file")
     args = parser.parse_args()
 
-    html_file = Path(args.html).resolve()
+    # 1. Tentukan berkas HTML
+    html_file = None
+    if args.html and Path(args.html).exists():
+        html_file = Path(args.html).resolve()
+    elif Path("render.html").exists():
+        html_file = Path("render.html").resolve()
+    elif Path("kapal-virgo.html").exists():
+        html_file = Path("kapal-virgo.html").resolve()
+    else:
+        candidates = list(Path(".").glob("*.html"))
+        if candidates:
+            html_file = candidates[0].resolve()
+        else:
+            raise RuntimeError("Berkas HTML render tidak ditemukan!")
+
     audio_dir = Path(args.audio_dir).resolve()
     out_file = Path(args.out).resolve()
     out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    html_content = html_file.read_text(encoding="utf-8")
-    m = re.search(r"const AI_NARRATION = (\[.*?\]);\s*const SCENE_DURATIONS", html_content, re.DOTALL)
-    if not m:
-        raise RuntimeError("AI_NARRATION tidak ditemukan!")
-    narr = json.loads(m.group(1))
+    # 2. Tentukan durasi scene dan pemetaan audio
+    scene_durations: list[float] = []
+    audio_map: dict[int, str] = {}
 
-    # Hitung waktu start & durasi per scene
-    scene_durations = [float(s.get("durationSec", 17.0)) for s in narr]
+    proj_json = Path(args.project_json) if args.project_json else Path("project.json")
+    if proj_json.exists():
+        try:
+            p_data = json.loads(proj_json.read_text(encoding="utf-8"))
+            scenes = p_data.get("scenes", [])
+            for i, s in enumerate(scenes):
+                dur = float(s.get("durasi") or 8.0)
+                scene_durations.append(dur)
+                audio_map[i + 1] = s.get("audio") or f"sc{i+1:02d}.mp3"
+        except Exception as e:
+            print(f"Peringatan membaca {proj_json}: {e}")
+            scene_durations = []
+
+    if not scene_durations:
+        html_content = html_file.read_text(encoding="utf-8")
+        # Format META (a041 player.py)
+        m_meta = re.search(r"const META\s*=\s*(\[.*?\]);\s*const TOTAL", html_content, re.DOTALL)
+        if m_meta:
+            meta_items = json.loads(m_meta.group(1))
+            for i, m_item in enumerate(meta_items):
+                scene_durations.append(float(m_item.get("dur") or 8.0))
+                audio_map[i + 1] = m_item.get("audio") or f"sc{i+1:02d}.mp3"
+        else:
+            # Format AI_NARRATION (legacy kapal-virgo.html)
+            m_narr = re.search(r"const AI_NARRATION = (\[.*?\]);\s*const SCENE_DURATIONS", html_content, re.DOTALL)
+            if not m_narr:
+                raise RuntimeError("Durasi scene tidak ditemukan di HTML maupun project.json!")
+            narr = json.loads(m_narr.group(1))
+            for i, s in enumerate(narr):
+                scene_durations.append(float(s.get("durationSec", 17.0)))
+                audio_map[i + 1] = f"sc{i+1:02d}.mp3"
+
+    total_scenes = len(scene_durations)
     scene_starts = []
     tot = 0.0
     for d in scene_durations:
@@ -114,7 +162,17 @@ def main():
     total_film_dur = sum(scene_durations)
 
     s_idx = max(0, args.start_scene - 1)
-    e_idx = min(len(narr), args.end_scene)
+    e_idx = min(total_scenes, args.end_scene)
+
+    if s_idx >= total_scenes:
+        print(f"Scene awal ({args.start_scene}) melebihi total scene ({total_scenes}). Skip.")
+        cmd_blank = [
+            "ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=black:s={args.width}x{args.height}:d=0.1",
+            "-f", "lavfi", "-i", "anullsrc=cl=stereo:r=44100", "-shortest",
+            "-c:v", "libx264", "-c:a", "aac", str(out_file)
+        ]
+        subprocess.run(cmd_blank, check=True)
+        return
 
     start_time = scene_starts[s_idx]
     end_time = scene_starts[e_idx - 1] + scene_durations[e_idx - 1]
@@ -122,7 +180,8 @@ def main():
     total_frames = int(chunk_dur * args.fps)
 
     print(f"==================================================")
-    print(f"RENDER SEGMENT: Scene {args.start_scene} s/d {args.end_scene}")
+    print(f"FILE HTML     : {html_file.name}")
+    print(f"RENDER CHUNK  : Scene {s_idx + 1} s/d {e_idx} (dari total {total_scenes} scene)")
     print(f"Rentang Waktu : {start_time:.3f}s - {end_time:.3f}s ({chunk_dur:.2f}s)")
     print(f"Total Frame   : {total_frames} @ {args.fps} FPS ({args.width}x{args.height})")
     print(f"==================================================")
@@ -203,31 +262,40 @@ def main():
 
     # Gabung audio untuk scene dalam rentang ini
     audio_concat_file = tmp_dir / "audio_concat.txt"
+    ada_audio = False
     with open(audio_concat_file, "w", encoding="utf-8") as f:
-        for sc in range(args.start_scene, args.end_scene + 1):
-            sc_file = audio_dir / f"sc{sc:02d}.mp3"
+        for sc in range(s_idx + 1, e_idx + 1):
+            sc_audio_name = audio_map.get(sc, f"sc{sc:02d}.mp3")
+            sc_file = audio_dir / sc_audio_name
             if sc_file.exists():
                 f.write(f"file '{sc_file.resolve().as_posix()}'\n")
+                ada_audio = True
 
     chunk_audio = tmp_dir / "chunk_audio.m4a"
-    subprocess.run([
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-        "-i", str(audio_concat_file),
-        "-c:a", "aac", "-b:a", "192k",
-        str(chunk_audio)
-    ], check=True, capture_output=True)
+    if ada_audio:
+        subprocess.run([
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+            "-i", str(audio_concat_file),
+            "-c:a", "aac", "-b:a", "192k",
+            str(chunk_audio)
+        ], check=True, capture_output=True)
 
     print("Menggabungkan frame + audio dengan FFmpeg...")
     ffmpeg_cmd = [
         "ffmpeg", "-y",
         "-framerate", str(args.fps),
         "-i", str(frames_dir / "%06d.jpg"),
-        "-i", str(chunk_audio),
+    ]
+    if ada_audio and chunk_audio.exists():
+        ffmpeg_cmd += ["-i", str(chunk_audio), "-c:a", "copy"]
+    else:
+        ffmpeg_cmd += ["-f", "lavfi", "-i", "anullsrc=cl=stereo:r=44100", "-c:a", "aac", "-shortest"]
+
+    ffmpeg_cmd += [
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-crf", "18",
         "-pix_fmt", "yuv420p",
-        "-c:a", "copy",
         "-movflags", "+faststart",
         "-shortest",
         str(out_file)
@@ -236,6 +304,7 @@ def main():
     print(f"Berhasil membuat: {out_file} ({out_file.stat().st_size / (1024*1024):.1f} MB)\n")
 
     shutil.rmtree(tmp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     main()

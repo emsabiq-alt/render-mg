@@ -52,7 +52,6 @@ jobs:
       - name: Run Chunk Render
         run: |
           python render.py \
-            --html kapal-virgo.html \
             --audio-dir audio \
             --start-scene ${{ matrix.start }} \
             --end-scene ${{ matrix.end }} \
@@ -64,7 +63,7 @@ jobs:
         with:
           name: video-chunk-${{ matrix.chunk }}
           path: chunks/chunk_${{ matrix.chunk }}.mp4
-          retention-days: 5
+          retention-days: 3
 
   merge-video:
     name: Merge Full Video & Publish Artifact
@@ -88,19 +87,14 @@ jobs:
         run: |
           mkdir -p final_output
           ls -R downloaded-chunks
-          cat << 'EOF' > list.txt
-          file 'downloaded-chunks/video-chunk-1/chunk_1.mp4'
-          file 'downloaded-chunks/video-chunk-2/chunk_2.mp4'
-          file 'downloaded-chunks/video-chunk-3/chunk_3.mp4'
-          file 'downloaded-chunks/video-chunk-4/chunk_4.mp4'
-          file 'downloaded-chunks/video-chunk-5/chunk_5.mp4'
-          EOF
-          ffmpeg -y -f concat -safe 0 -i list.txt -c copy final_output/kapal_virgo_1080p_final.mp4
+          find downloaded-chunks -name "chunk_*.mp4" | sort -V | while read f; do echo "file '$PWD/$f'"; done > list.txt
+          cat list.txt
+          ffmpeg -y -f concat -safe 0 -i list.txt -c copy final_output/rendered_video_final.mp4
           ls -lh final_output
 
       - name: Upload Final Video Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: kapal-virgo-1080p-full
-          path: final_output/kapal_virgo_1080p_final.mp4
+          name: explainer-video-final
+          path: final_output/rendered_video_final.mp4
           retention-days: 14
