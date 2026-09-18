@@ -1,0 +1,106 @@
+name: Render Explainer Video (Matrix Parallel)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  render-chunks:
+    name: Render Scenes ${{ matrix.start }}-${{ matrix.end }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - chunk: 1
+            start: 1
+            end: 10
+          - chunk: 2
+            start: 11
+            end: 20
+          - chunk: 3
+            start: 21
+            end: 30
+          - chunk: 4
+            start: 31
+            end: 40
+          - chunk: 5
+            start: 41
+            end: 50
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-liberation fonts-noto-cjk libnss3 libatk-bridge2.0-0 libgtk-3-0
+          sudo apt-get install -y google-chrome-stable || true
+
+      - name: Install Python Dependencies
+        run: |
+          pip install websocket-client
+
+      - name: Run Chunk Render
+        run: |
+          python render.py \
+            --html kapal-virgo.html \
+            --audio-dir audio \
+            --start-scene ${{ matrix.start }} \
+            --end-scene ${{ matrix.end }} \
+            --out chunks/chunk_${{ matrix.chunk }}.mp4 \
+            --fps 30
+
+      - name: Upload Chunk Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-chunk-${{ matrix.chunk }}
+          path: chunks/chunk_${{ matrix.chunk }}.mp4
+          retention-days: 5
+
+  merge-video:
+    name: Merge Full Video & Publish Artifact
+    needs: render-chunks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Download All Chunks
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded-chunks
+
+      - name: Stitch Video Chunks
+        run: |
+          mkdir -p final_output
+          ls -R downloaded-chunks
+          cat << 'EOF' > list.txt
+          file 'downloaded-chunks/video-chunk-1/chunk_1.mp4'
+          file 'downloaded-chunks/video-chunk-2/chunk_2.mp4'
+          file 'downloaded-chunks/video-chunk-3/chunk_3.mp4'
+          file 'downloaded-chunks/video-chunk-4/chunk_4.mp4'
+          file 'downloaded-chunks/video-chunk-5/chunk_5.mp4'
+          EOF
+          ffmpeg -y -f concat -safe 0 -i list.txt -c copy final_output/kapal_virgo_1080p_final.mp4
+          ls -lh final_output
+
+      - name: Upload Final Video Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kapal-virgo-1080p-full
+          path: final_output/kapal_virgo_1080p_final.mp4
+          retention-days: 14
