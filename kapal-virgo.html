@@ -2883,38 +2883,38 @@ function updateSceneMotion(idx, t) {
   // Aksi & Visual Stage Progresif Sesuai Alur 50 Scene
   
   // Deterministik Kamera Sinematik (Sinkron Frame & Waktu Real):
-  const camType = CAM_PLAN[idx] || 0;
-  let camTransform = '';
-  if (camType === 0) { // camPush
-    const s = 1.00 + p * 0.08;
-    const tx = -p * 12;
-    const ty = -p * 6;
-    camTransform = scale() translate(px, px);
-  } else if (camType === 1) { // camPullBack
-    const s = 1.08 - p * 0.08;
-    const tx = (1 - p) * 8;
-    const ty = (1 - p) * 4;
-    camTransform = scale() translate(px, px);
-  } else if (camType === 2) { // camPanRight
-    const tx = 24 - p * 48;
-    const ty = -2 + p * 4;
-    camTransform = scale(1.04) translate(px, px);
-  } else if (camType === 3) { // camPanLeft
-    const tx = -24 + p * 48;
-    const ty = 2 - p * 4;
-    camTransform = scale(1.04) translate(px, px);
-  } else if (camType === 4) { // camCraneDown
-    const s = 1.06 - p * 0.04;
-    const ty = -18 + p * 28;
-    camTransform = scale() translate(0px, px);
-  } else if (camType === 5) { // camDutchRoll
-    const s = 1.04 + p * 0.02;
-    const rot = -0.5 + p * 1.1;
-    const tx = -6 + p * 14;
-    const ty = -p * 5;
-    camTransform = scale() rotate(deg) translate(px, px);
+  var camType = CAM_PLAN[idx] || 0;
+  var camTransform = '';
+  if (camType === 0) {
+    var s = 1.00 + p * 0.08;
+    var tx = -p * 12;
+    var ty = -p * 6;
+    camTransform = 'scale(' + s.toFixed(3) + ') translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
+  } else if (camType === 1) {
+    var s = 1.08 - p * 0.08;
+    var tx = (1 - p) * 8;
+    var ty = (1 - p) * 4;
+    camTransform = 'scale(' + s.toFixed(3) + ') translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
+  } else if (camType === 2) {
+    var tx = 24 - p * 48;
+    var ty = -2 + p * 4;
+    camTransform = 'scale(1.04) translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
+  } else if (camType === 3) {
+    var tx = -24 + p * 48;
+    var ty = 2 - p * 4;
+    camTransform = 'scale(1.04) translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
+  } else if (camType === 4) {
+    var s = 1.06 - p * 0.04;
+    var ty = -18 + p * 28;
+    camTransform = 'scale(' + s.toFixed(3) + ') translate(0px, ' + ty.toFixed(1) + 'px)';
+  } else if (camType === 5) {
+    var s = 1.04 + p * 0.02;
+    var rot = -0.5 + p * 1.1;
+    var tx = -6 + p * 14;
+    var ty = -p * 5;
+    camTransform = 'scale(' + s.toFixed(3) + ') rotate(' + rot.toFixed(2) + 'deg) translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
   }
-  const curSvg = sceneEls[idx] ? sceneEls[idx].querySelector('svg') : null;
+  var curSvg = sceneEls[idx] ? sceneEls[idx].querySelector('svg') : null;
   if (curSvg) {
     curSvg.style.transform = camTransform;
   }
