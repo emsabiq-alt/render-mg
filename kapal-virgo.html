@@ -2618,6 +2618,15 @@ function plainText(html) {
 }
 
 let isPaused = false;
+window.IS_RENDERING = false;
+window.stopTicker = function() {
+  window.IS_RENDERING = true;
+  isPaused = true;
+  clearAllTimers();
+  if (typeof speechSynthesis !== 'undefined') {
+    try { speechSynthesis.cancel(); } catch(e) {}
+  }
+};
 let currentSceneIdx = 0;
 let currentChunkIdx = 0;
 let sceneStartTime = performance.now();
@@ -2639,11 +2648,16 @@ function displayChunk(sIdx, cIdx) {
   const bannerEl = $('#bannerHead');
   if (bannerEl) {
     bannerEl.innerHTML = chunk.html;
-    gsap.killTweensOf(bannerEl);
-    gsap.fromTo(bannerEl, 
-      { opacity: 0, y: 6 }, 
-      { opacity: 1, y: 0, duration: 0.18, ease: 'power2.out' }
-    );
+    if (!window.IS_RENDERING) {
+      gsap.killTweensOf(bannerEl);
+      gsap.fromTo(bannerEl, 
+        { opacity: 0, y: 6 }, 
+        { opacity: 1, y: 0, duration: 0.18, ease: 'power2.out' }
+      );
+    } else {
+      bannerEl.style.opacity = '1';
+      bannerEl.style.transform = 'none';
+    }
   }
 }
 
@@ -2812,19 +2826,23 @@ function goToScene(targetIdx) {
     $('#hudMeteo').textContent = d.wave;
     $('#hudStatusMain').textContent = d.stat;
 
-    if (d.stat.includes('LASHING BREAK')) {
-      $('#stampAlert').textContent = "LASHING BREAK!!";
-      gsap.fromTo('#stampAlert', { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(2)' });
-      gsap.to('#stampAlert', { scale: 0, opacity: 0, delay: 2.5, duration: 0.2 });
-    } else if (d.stat.includes('ABANDON SHIP')) {
-      $('#stampAlert').textContent = "ABANDON SHIP!!";
-      gsap.fromTo('#stampAlert', { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(2.5)' });
-      gsap.to('#stampAlert', { scale: 0, opacity: 0, delay: 3.2, duration: 0.25 });
+    if (!window.IS_RENDERING) {
+      if (d.stat.includes('LASHING BREAK')) {
+        $('#stampAlert').textContent = "LASHING BREAK!!";
+        gsap.fromTo('#stampAlert', { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.3, ease: 'back.out(2)' });
+        gsap.to('#stampAlert', { scale: 0, opacity: 0, delay: 2.5, duration: 0.2 });
+      } else if (d.stat.includes('ABANDON SHIP')) {
+        $('#stampAlert').textContent = "ABANDON SHIP!!";
+        gsap.fromTo('#stampAlert', { scale: 0, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(2.5)' });
+        gsap.to('#stampAlert', { scale: 0, opacity: 0, delay: 3.2, duration: 0.25 });
+      }
     }
   }
 
-  // Mainkan narasi mengalir berkelanjutan untuk adegan baru ini
-  playSceneAudio(targetIdx);
+  // Mainkan narasi mengalir berkelanjutan untuk adegan baru ini (hanya jika mode preview)
+  if (!window.IS_RENDERING) {
+    playSceneAudio(targetIdx);
+  }
 }
 
 function renderAt(t) {
@@ -2850,68 +2868,89 @@ function renderAt(t) {
    4. Infografis Vektor Kinetik: Garis aliran arus laut (dashoffset), titik G meloncat, radar tactical glow. */
 function updateSceneMotion(idx, t) {
   const sceneTime = Math.max(0, t - SCENE_STARTS[idx]);
-  const sceneDur = SCENE_DURATIONS[idx] || 20;
+  const sceneDur = SCENE_DURATIONS[idx] || 17;
   const p = Math.min(1, sceneTime / sceneDur);
 
-  // Gelombang siklus fisik alamiah (ritme hidup 60 FPS):
-  const waveCycle   = Math.sin(sceneTime * 2.2);   // ritme alun ombak wajar (~2.8s)
-  const waveCos     = Math.cos(sceneTime * 2.2);
-  const breathCycle = Math.sin(sceneTime * 1.8);   // ritme nafas riil (~3.5s)
-  const fastPulse   = Math.sin(sceneTime * 8.0);   // denyut indikator darurat
-  const slowSwell   = Math.sin(sceneTime * 1.2);   // ayunan lambung kapal di laut lepas
-  const microJitter = Math.sin(sceneTime * 35.0);  // getaran mesin diesel
+  // Gelombang siklus fisik alamiah (ritme hidup & tenang khas dokumenter sinematik):
+  const waveCycle   = Math.sin(sceneTime * 1.3);   // ritme alun ombak wajar samudra (~4.8s)
+  const waveCos     = Math.cos(sceneTime * 1.3);
+  const breathCycle = Math.sin(sceneTime * 1.1);   // ritme nafas riil (~5.7s)
+  const fastPulse   = Math.sin(sceneTime * 4.5);   // denyut indikator darurat teratur
+  const slowSwell   = Math.sin(sceneTime * 0.8);   // ayunan lambung kapal di laut lepas (~7.8s)
+  const microJitter = Math.sin(sceneTime * 20.0);  // getaran mesin diesel
 
   // Camera Shake Sinematik pada Moment Ekstrem (Badai 3.8m & Tabrakan Domino)
   if (idx === 24 || idx === 25) {
-    // Badai Monsun & Hantaman Ombak 3.8m
-    const intensity = idx === 25 ? 7.0 : 4.0;
-    const shake = Math.sin(sceneTime * 28) * Math.max(0, 1 - (sceneTime / sceneDur) * 0.4) * intensity;
-    $('#stage').style.transform = `translate(calc(-50% + ${shake.toFixed(1)}px), calc(-50% + ${(waveCos * 4).toFixed(1)}px)) scale(${stageScale})`;
+    const intensity = idx === 25 ? 5.0 : 3.0;
+    const shake = Math.sin(sceneTime * 16) * Math.max(0, 1 - (sceneTime / sceneDur) * 0.4) * intensity;
+    $('#stage').style.transform = `translate(calc(-50% + ${shake.toFixed(1)}px), calc(-50% + ${(waveCos * 3).toFixed(1)}px)) scale(${stageScale})`;
   } else if (idx === 26) {
-    // Lashing Break: Sentakan saat rantai meletup di detik 4.5s
-    const isSnap = sceneTime > 4.2 && sceneTime < 6.5;
-    const snapShake = isSnap ? Math.sin((sceneTime - 4.2) * 50) * 11 : 0;
+    const snapStart = sceneDur * 0.32;
+    const isSnap = sceneTime > snapStart && sceneTime < (snapStart + 2.0);
+    const snapShake = isSnap ? Math.sin((sceneTime - snapStart) * 28) * 8 : 0;
     $('#stage').style.transform = `translate(calc(-50% + ${snapShake.toFixed(1)}px), -50%) scale(${stageScale})`;
   } else if (idx === 28) {
-    // Tabrakan domino tronton
-    const crash = (sceneTime > 4.5 && sceneTime < 8.5) ? Math.sin((sceneTime - 4.5) * 40) * (1 - (sceneTime - 4.5) / 4.0) * 10 : 0;
+    const crashStart = sceneDur * 0.32;
+    const isCrash = sceneTime > crashStart && sceneTime < (crashStart + 3.0);
+    const crash = isCrash ? Math.sin((sceneTime - crashStart) * 22) * (1 - (sceneTime - crashStart) / 3.0) * 7 : 0;
     $('#stage').style.transform = `translate(calc(-50% + ${crash.toFixed(1)}px), -50%) scale(${stageScale})`;
   } else {
     $('#stage').style.transform = `translate(-50%, -50%) scale(${stageScale})`;
   }
 
-  // Aksi & Visual Stage Progresif Sesuai Alur 50 Scene
-  
+  // Deterministik Stamp Alert
+  const stamp = $('#stampAlert');
+  if (stamp) {
+    if (idx === 26) {
+      const snapStart = sceneDur * 0.32;
+      const isAlert = sceneTime >= snapStart && sceneTime <= (snapStart + 4.0);
+      stamp.textContent = "LASHING BREAK!!";
+      stamp.style.opacity = isAlert ? '1' : '0';
+      stamp.style.transform = isAlert ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0)';
+    } else if (idx === 37) {
+      const abStart = sceneDur * 0.25;
+      const isAlert = sceneTime >= abStart && sceneTime <= (abStart + 5.0);
+      stamp.textContent = "ABANDON SHIP!!";
+      stamp.style.opacity = isAlert ? '1' : '0';
+      stamp.style.transform = isAlert ? 'translate(-50%, -50%) scale(1)' : 'translate(-50%, -50%) scale(0)';
+    } else {
+      stamp.style.opacity = '0';
+      stamp.style.transform = 'translate(-50%, -50%) scale(0)';
+    }
+  }
+
   // Deterministik Kamera Sinematik (Sinkron Frame & Waktu Real):
+  const pCam = p * (2 - p);
+  const pEaseInOut = p * p * (3 - 2 * p);
   var camType = CAM_PLAN[idx] || 0;
   var camTransform = '';
   if (camType === 0) {
-    var s = 1.00 + p * 0.08;
-    var tx = -p * 12;
-    var ty = -p * 6;
+    var s = 1.00 + pCam * 0.08;
+    var tx = -pCam * 14;
+    var ty = -pCam * 7;
     camTransform = 'scale(' + s.toFixed(3) + ') translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
   } else if (camType === 1) {
-    var s = 1.08 - p * 0.08;
-    var tx = (1 - p) * 8;
-    var ty = (1 - p) * 4;
+    var s = 1.08 - pCam * 0.08;
+    var tx = (1 - pCam) * 12;
+    var ty = (1 - pCam) * 6;
     camTransform = 'scale(' + s.toFixed(3) + ') translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
   } else if (camType === 2) {
-    var tx = 24 - p * 48;
-    var ty = -2 + p * 4;
+    var tx = 28 - pEaseInOut * 56;
+    var ty = -3 + pEaseInOut * 6;
     camTransform = 'scale(1.04) translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
   } else if (camType === 3) {
-    var tx = -24 + p * 48;
-    var ty = 2 - p * 4;
+    var tx = -28 + pEaseInOut * 56;
+    var ty = 3 - pEaseInOut * 6;
     camTransform = 'scale(1.04) translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
   } else if (camType === 4) {
-    var s = 1.06 - p * 0.04;
-    var ty = -18 + p * 28;
+    var s = 1.06 - pCam * 0.04;
+    var ty = -20 + pCam * 32;
     camTransform = 'scale(' + s.toFixed(3) + ') translate(0px, ' + ty.toFixed(1) + 'px)';
   } else if (camType === 5) {
-    var s = 1.04 + p * 0.02;
-    var rot = -0.5 + p * 1.1;
-    var tx = -6 + p * 14;
-    var ty = -p * 5;
+    var s = 1.04 + pCam * 0.03;
+    var rot = -0.6 + pEaseInOut * 1.3;
+    var tx = -8 + pEaseInOut * 16;
+    var ty = -pEaseInOut * 6;
     camTransform = 'scale(' + s.toFixed(3) + ') rotate(' + rot.toFixed(2) + 'deg) translate(' + tx.toFixed(1) + 'px, ' + ty.toFixed(1) + 'px)';
   }
   var curSvg = sceneEls[idx] ? sceneEls[idx].querySelector('svg') : null;
@@ -2921,75 +2960,64 @@ function updateSceneMotion(idx, t) {
 
   switch (idx) {
     case 0: { // 01: Jam Digital 02:15 WIB & Anjungan Komando
-      // 1. Radar scanner line berputar 360 derajat mulus
       const rLine = $('#radarLine01');
       if (rLine) {
-        const rDeg = (sceneTime * 160) % 360;
+        const rDeg = (sceneTime * 60) % 360;
         rLine.setAttribute('transform', `rotate(${rDeg.toFixed(1)} 480 780)`);
       }
-      // 2. Kilat petir badai menyambar di kaca jendela (t=6.2s & t=11.5s)
       const win = $('#sc01 rect[fill="url(#bridgeWin)"]');
       if (win) {
-        const flash1 = (sceneTime > 6.0 && sceneTime < 6.4) ? Math.sin((sceneTime - 6.0) * 25) : 0;
-        const flash2 = (sceneTime > 11.2 && sceneTime < 11.6) ? Math.sin((sceneTime - 11.2) * 25) : 0;
+        const flash1 = (sceneTime > sceneDur * 0.35 && sceneTime < (sceneDur * 0.35 + 0.4)) ? Math.sin((sceneTime - sceneDur * 0.35) * 18) : 0;
+        const flash2 = (sceneTime > sceneDur * 0.68 && sceneTime < (sceneDur * 0.68 + 0.4)) ? Math.sin((sceneTime - sceneDur * 0.68) * 18) : 0;
         const flash = Math.max(0, flash1, flash2);
         win.style.filter = flash > 0.1 ? `brightness(${1 + flash * 2.5})` : 'none';
       }
-      // 3. Lampu sirine plafon merah menyala berputar
       const bcn = $('#beaconGlow01');
       if (bcn) {
-        const isAlarm = sceneTime > 4.0;
-        const s = isAlarm ? 1 + Math.sin(sceneTime * 8) * 0.35 : 0.8;
+        const isAlarm = sceneTime > sceneDur * 0.25;
+        const s = isAlarm ? 1 + Math.sin(sceneTime * 4.5) * 0.30 : 0.8;
         bcn.setAttribute('transform', `translate(${960 * (1 - s)}, ${50 * (1 - s)}) scale(${s.toFixed(2)})`);
-        bcn.setAttribute('opacity', isAlarm ? (0.5 + Math.sin(sceneTime * 8) * 0.45).toFixed(2) : 0.25);
+        bcn.setAttribute('opacity', isAlarm ? (0.5 + Math.sin(sceneTime * 4.5) * 0.45).toFixed(2) : 0.25);
       }
-      // 4. Jam digital berkedip 1 Hz
       const clk = $('#clockText01');
       if (clk) clk.textContent = (Math.floor(sceneTime) % 2 === 0) ? '02:15 WIB' : '02 15 WIB';
       break;
     }
 
     case 1: { // 02: KM Virgo di Samudra Malam (Multi-layer 2.5D Parallax)
-      // Background: Bulan purnama bergeser perlahan (parallax jauh)
       const moon = $('#sc02 circle[fill="#FEF08A"]');
       if (moon) moon.style.transform = `translateX(${(p * 24).toFixed(1)}px)`;
 
-      // Midground Hero Ship: Oleng & mengalun dengan dinamika hidrostatik nyata
       const ship = $('#heroShip02');
       if (ship) {
-        const roll = -6 + waveCycle * 4.2;
-        const bob = waveCos * 15;
+        const roll = -6 + waveCycle * 3.6;
+        const bob = waveCos * 12;
         ship.setAttribute('transform', `translate(960, ${(560 + bob).toFixed(1)}) rotate(${roll.toFixed(2)})`);
       }
-      // Lampu navigasi merah di tiang radar berkedip ritmis
       const navLight = $('#sc02 circle[fill="#EF4444"]');
-      if (navLight) navLight.setAttribute('opacity', (Math.sin(sceneTime * 6) > 0 ? 1.0 : 0.2).toFixed(2));
+      if (navLight) navLight.setAttribute('opacity', (Math.sin(sceneTime * 4) > 0 ? 1.0 : 0.2).toFixed(2));
 
-      // Asap cerobong diesel mengepul halus ke belakang
       const funnelCircle = $('#sc02 circle[cx="150"][cy="-120"]');
       if (funnelCircle) {
-        const fs = 1 + Math.sin(sceneTime * 4) * 0.25;
+        const fs = 1 + Math.sin(sceneTime * 2.5) * 0.2;
         funnelCircle.setAttribute('transform', `translate(${150 * (1 - fs)}, ${-120 * (1 - fs)}) scale(${fs.toFixed(2)})`);
       }
 
-      // Parallax Ombak 2 Lapis: Belakang & Depan
       const w1 = $('#wave02a'), w2 = $('#wave02b');
-      if (w1) w1.style.transform = `translate(${(waveCycle * 24).toFixed(1)}px, ${(waveCos * 8).toFixed(1)}px)`;
-      if (w2) w2.style.transform = `translate(${(-waveCycle * 38).toFixed(1)}px, ${(-waveCos * 13).toFixed(1)}px)`;
+      if (w1) w1.style.transform = `translate(${(waveCycle * 18).toFixed(1)}px, ${(waveCos * 6).toFixed(1)}px)`;
+      if (w2) w2.style.transform = `translate(${(-waveCycle * 26).toFixed(1)}px, ${(-waveCos * 9).toFixed(1)}px)`;
       break;
     }
 
     case 2: { // 03: Nakhoda Panik di Radio VHF
       const nak = $('#sc03 g[transform*="translate"]');
       if (nak) {
-        // Tarikan nafas panik & getaran anjungan
-        nak.setAttribute('transform', `translate(680, ${(480 + Math.sin(sceneTime * 7) * 4).toFixed(1)}) rotate(${(Math.sin(sceneTime * 3) * 1.5).toFixed(1)})`);
+        nak.setAttribute('transform', `translate(680, ${(480 + Math.sin(sceneTime * 5) * 2.5).toFixed(1)}) rotate(${(Math.sin(sceneTime * 2.5) * 1.0).toFixed(1)})`);
       }
       const may = $('#sc03 text[fill="#EF4444"]');
       if (may) {
-        // Teks MAYDAY berdenyut tegas saat panggilan disuarakan
-        const isMayday = sceneTime > 4.5;
-        const ms = isMayday ? 1 + Math.sin(sceneTime * 8) * 0.14 : 1.0;
+        const isMayday = sceneTime > sceneDur * 0.25;
+        const ms = isMayday ? 1 + Math.sin(sceneTime * 5) * 0.08 : 1.0;
         may.setAttribute('transform', `translate(${1200 * (1 - ms)}, ${420 * (1 - ms)}) scale(${ms.toFixed(2)})`);
       }
       break;
@@ -2998,61 +3026,57 @@ function updateSceneMotion(idx, t) {
     case 3: { // 04: Stopwatch 12 Menit
       const needle = $('#sc04 line[stroke="#DC2626"]');
       if (needle) {
-        // Jarum stopwatch bergerak dengan detak kinetik mekanis (tick-recoil)
-        const tickStep = Math.floor(sceneTime * 4);
-        const tickRecoil = Math.sin(sceneTime * 25) * 1.2;
-        const needleDeg = (tickStep * 15 + tickRecoil) % 360;
+        const needleDeg = (sceneTime * 30) % 360;
         needle.setAttribute('transform', `rotate(${needleDeg.toFixed(1)})`);
       }
-      // Sektor bahaya merah berkedip intensif
       const sector = $('#sc04 path[fill*="EF4444"]');
-      if (sector) sector.setAttribute('opacity', (0.4 + Math.sin(sceneTime * 5) * 0.25).toFixed(2));
+      if (sector) sector.setAttribute('opacity', (0.4 + Math.sin(sceneTime * 3) * 0.2).toFixed(2));
       break;
     }
 
     case 4: { // 05: Sertifikat Laik Laut Robek
       const cert = $('#sc05 g[transform*="translate"]');
-      if (cert) cert.setAttribute('transform', `translate(960, ${(480 + Math.sin(sceneTime * 3) * 3).toFixed(1)}) rotate(${(Math.sin(sceneTime * 1.5) * 1.2).toFixed(1)})`);
+      if (cert) cert.setAttribute('transform', `translate(960, ${(480 + Math.sin(sceneTime * 2) * 2.5).toFixed(1)}) rotate(${(Math.sin(sceneTime * 1.0) * 0.8).toFixed(1)})`);
       break;
     }
 
     case 5: { // 06: Title Card Pop-Art
       const card = $('#sc06 g[transform*="translate"]');
       if (card) {
-        const cs = 1 + Math.sin(sceneTime * 1.5) * 0.018;
+        const cs = 1 + Math.sin(sceneTime * 1.2) * 0.015;
         card.setAttribute('transform', `translate(960, 480) scale(${cs.toFixed(3)})`);
       }
       break;
     }
 
-    case 6: { // 07: Pelabuhan Tanjung Perak Sibuk (Banyak Kapal & Aktivitas)
+    case 6: { // 07: Pelabuhan Tanjung Perak Sibuk
       const cShip = $('#containerShip07');
-      if (cShip) cShip.setAttribute('transform', `translate(60, ${(410 + waveCos * 4).toFixed(1)})`);
+      if (cShip) cShip.setAttribute('transform', `translate(60, ${(410 + waveCos * 3).toFixed(1)})`);
 
       const tug = $('#tugboat07');
       if (tug) {
-        const tugBob = Math.sin(sceneTime * 3.5) * 5;
-        tug.setAttribute('transform', `translate(${(680 + Math.sin(sceneTime * 1.5) * 12).toFixed(1)}, ${(600 + tugBob).toFixed(1)})`);
+        const tugBob = Math.sin(sceneTime * 2.0) * 3.5;
+        tug.setAttribute('transform', `translate(${(680 + Math.sin(sceneTime * 0.8) * 10).toFixed(1)}, ${(600 + tugBob).toFixed(1)})`);
       }
 
       const fDock = $('#ferryDock07');
-      if (fDock) fDock.setAttribute('transform', `translate(1220, ${(390 + waveCos * 5).toFixed(1)})`);
+      if (fDock) fDock.setAttribute('transform', `translate(1220, ${(390 + waveCos * 3.5).toFixed(1)})`);
 
       const crane = $('#craneG07');
-      if (crane) crane.setAttribute('transform', `translate(0, ${(Math.sin(sceneTime * 1.8) * 6).toFixed(1)})`);
+      if (crane) crane.setAttribute('transform', `translate(0, ${(Math.sin(sceneTime * 1.2) * 4.5).toFixed(1)})`);
       break;
     }
 
     case 7: { // 08: Antrean 89 Truk Ekspedisi di Dermaga
       const trk = $('#truckRow08');
       if (trk) {
-        const pQueue = Math.min(1, sceneTime / 14.0);
-        const advance = pQueue * 120 + (Math.sin(sceneTime * 2.0) > 0 ? 8 : 0);
+        const pQueue = Math.min(1, sceneTime / (sceneDur * 0.85));
+        const advance = pQueue * 120 + (Math.sin(sceneTime * 1.5) > 0 ? 5 : 0);
         trk.setAttribute('transform', `translate(${(120 + advance).toFixed(1)}, 520)`);
       }
       const officer = $('#dockOfficer08');
       if (officer) {
-        const batonBlink = Math.sin(sceneTime * 8) > 0 ? 1.0 : 0.25;
+        const batonBlink = Math.sin(sceneTime * 4) > 0 ? 1.0 : 0.25;
         const batonLight = officer.querySelector('circle[fill="#EF4444"]');
         if (batonLight) batonLight.setAttribute('opacity', batonBlink);
       }
@@ -3061,33 +3085,32 @@ function updateSceneMotion(idx, t) {
 
     case 8: { // 09: Pak Slamet & Kopi Tubruk
       const pak = $('#sc09 g[transform*="translate"]');
-      if (pak) pak.setAttribute('transform', `translate(680, ${(520 + Math.sin(sceneTime * 2) * 4).toFixed(1)})`);
-      // Uap kopi mengepul hangat bergelombang alami
+      if (pak) pak.setAttribute('transform', `translate(680, ${(520 + Math.sin(sceneTime * 1.4) * 3).toFixed(1)})`);
       const steam = $('#steam09');
       if (steam) {
-        const wave = Math.sin(sceneTime * 3) * 6;
-        const rise = (sceneTime * 16) % 24;
+        const wave = Math.sin(sceneTime * 1.8) * 4;
+        const rise = (sceneTime * 8) % 24;
         steam.setAttribute('transform', `translate(${wave.toFixed(1)}, ${(-rise).toFixed(1)})`);
-        steam.setAttribute('opacity', (0.4 + Math.sin(sceneTime * 2) * 0.3).toFixed(2));
+        steam.setAttribute('opacity', (0.4 + Math.sin(sceneTime * 1.5) * 0.25).toFixed(2));
       }
       break;
     }
 
     case 9: { // 10: Sembako Borneo
       const trk10 = $('#sc10 g[transform*="translate"]');
-      if (trk10) trk10.setAttribute('transform', `translate(960, ${(520 + microJitter * 2).toFixed(1)})`);
+      if (trk10) trk10.setAttribute('transform', `translate(960, ${(520 + microJitter * 1.5).toFixed(1)})`);
       break;
     }
 
-    case 11: { // 12: Truk Masuk Ramp Door (Fisika Kontak Sejajar Terverifikasi)
+    case 11: { // 12: Truk Masuk Ramp Door (Fisika Kontak Halus & Durasi Penuh)
       const trk12 = $('#truckRamp12');
       if (trk12) {
         const rear = $('#wheelRear12');
         const front = $('#wheelFront12');
-        // Phase 1 (0s - 6.0s): Truk melaju mantap menaiki rampa dengan kecepatan wajar (6.0s sampai puncak)
-        if (sceneTime <= 6.0) {
-          const pDrive = Math.min(1, sceneTime / 6.0);
-          const q = pDrive * pDrive * (3 - 2 * pDrive); // smoothstep
+        const tSplit = sceneDur * 0.58;
+        if (sceneTime <= tSplit) {
+          const pDrive = Math.min(1, sceneTime / tSplit);
+          const q = pDrive * pDrive * (3 - 2 * pDrive);
           const dx = 630 * q;
           const x = 250 + dx;
           const y = 711.35 - (dx * 0.26);
@@ -3097,11 +3120,10 @@ function updateSceneMotion(idx, t) {
           if (rear) rear.setAttribute('transform', `translate(50,140) rotate(${wheelDeg.toFixed(2)})`);
           if (front) front.setAttribute('transform', `translate(260,140) rotate(${wheelDeg.toFixed(2)})`);
         } else {
-          // Phase 2 (6.0s ke atas): Truk melaju masuk ke dek datar car deck kapal
-          const pDeck = Math.min(1, (sceneTime - 6.0) / Math.max(3.5, sceneDur - 6.0));
+          const pDeck = Math.min(1, (sceneTime - tSplit) / (sceneDur - tSplit));
           const qDeck = pDeck * pDeck * (3 - 2 * pDeck);
           const deckX = 880 + qDeck * 240;
-          const deckRot = -14.574 * (1 - Math.min(1, pDeck * 2.5)); // merata ke 0 derajat
+          const deckRot = -14.574 * (1 - Math.min(1, pDeck * 2.0));
           trk12.setAttribute('transform', `translate(${deckX.toFixed(2)}, 547.55) rotate(${deckRot.toFixed(2)})`);
           const baseSlopeDist = 630 * Math.sqrt(1 + 0.26 * 0.26);
           const deckDist = qDeck * 240;
@@ -3113,21 +3135,18 @@ function updateSceneMotion(idx, t) {
       break;
     }
 
-    case 12: { // 13: Car Deck Open (Perspektif Lorong Melaju ke Depan)
+    case 12: { // 13: Car Deck Open
       const dline = $('#deckLine13');
-      // Garis marka lorong bergerak menyapu mendekat memberi sensasi maju cepat
-      if (dline) dline.setAttribute('stroke-dashoffset', (-sceneTime * 95).toFixed(1));
-      // Lampu TL berkedip neon
+      if (dline) dline.setAttribute('stroke-dashoffset', (-sceneTime * 45).toFixed(1));
       const lights = $('#sc13 g[fill="#FEF08A"]');
-      if (lights) lights.setAttribute('opacity', (0.85 + Math.sin(sceneTime * 15) * 0.15).toFixed(2));
+      if (lights) lights.setAttribute('opacity', (0.85 + Math.sin(sceneTime * 8) * 0.15).toFixed(2));
       break;
     }
 
     case 14: { // 15: Rantai Lashing Kendur
       const chain = $('#sc15 #chainG15');
-      // Rantai kendur berayun seperti pendulum di atas getaran lantai kapal
       if (chain) {
-        const swing = Math.sin(sceneTime * 2.5) * 11;
+        const swing = Math.sin(sceneTime * 1.8) * 9;
         chain.setAttribute('transform', `translate(960, 500) rotate(${swing.toFixed(1)})`);
       }
       break;
@@ -3136,8 +3155,8 @@ function updateSceneMotion(idx, t) {
     case 15: { // 16: Penumpang Tertidur
       const slp = $('#sc16 #sleepG16');
       if (slp) {
-        const breath = 1 + breathCycle * 0.045;
-        slp.setAttribute('transform', `translate(380, ${(440 + breathCycle * 4).toFixed(1)}) scale(1, ${breath.toFixed(3)})`);
+        const breath = 1 + breathCycle * 0.035;
+        slp.setAttribute('transform', `translate(380, ${(440 + breathCycle * 3).toFixed(1)}) scale(1, ${breath.toFixed(3)})`);
       }
       break;
     }
@@ -3145,17 +3164,17 @@ function updateSceneMotion(idx, t) {
     case 16: { // 17: Lepas Tali Tambang Dermaga
       const rope = $('#sc17 #ropePath17');
       if (rope) {
-        const pRope = Math.min(1, sceneTime / 6.0);
+        const pRope = Math.min(1, sceneTime / (sceneDur * 0.8));
         rope.setAttribute('transform', `translate(${(pRope * 260).toFixed(1)}, ${(-pRope * 110).toFixed(1)})`);
       }
       break;
     }
 
-    case 17: { // 18: Haluan Selat Madura (Membelah Ombak Depan)
+    case 17: { // 18: Haluan Selat Madura
       const bow = $('#sc18 #bow18');
       if (bow) {
-        const heave = waveCos * 18;
-        const pitch = waveCycle * 2.8;
+        const heave = waveCos * 14;
+        const pitch = waveCycle * 2.2;
         bow.setAttribute('transform', `translate(0, ${heave.toFixed(1)}) rotate(${pitch.toFixed(1)} 960 540)`);
       }
       break;
@@ -3164,8 +3183,7 @@ function updateSceneMotion(idx, t) {
     case 18: { // 19: Radar Taktis Segitiga Masalembo
       const rPoly = $('#sc19 #radarPoly19');
       if (rPoly) {
-        // Segitiga keramat berpendar merah berdenyut memperingatkan bahaya
-        const op = 0.25 + Math.abs(Math.sin(sceneTime * 3.5)) * 0.6;
+        const op = 0.25 + Math.abs(Math.sin(sceneTime * 2.2)) * 0.5;
         rPoly.setAttribute('fill', `rgba(220,38,38,${op.toFixed(2)})`);
       }
       break;
@@ -3174,8 +3192,7 @@ function updateSceneMotion(idx, t) {
     case 22: { // 23: Konvergensi Arlindo Tiga Arus
       const arl = $('#sc23 #arlindoG23');
       if (arl) {
-        // Tiga panah arus samudra berputar kinetik mengalir ke pusaran tengah
-        const rot = waveCycle * 8.5;
+        const rot = waveCycle * 6.5;
         arl.setAttribute('transform', `translate(960, 500) rotate(${rot.toFixed(1)})`);
       }
       break;
@@ -3184,35 +3201,35 @@ function updateSceneMotion(idx, t) {
     case 23: { // 24: Gelombang Soliter Bawah Laut
       const sol = $('#sc24 #solG24');
       if (sol) {
-        const flow = Math.sin(sceneTime * 1.8) * 90;
+        const flow = Math.sin(sceneTime * 1.2) * 65;
         sol.setAttribute('transform', `translate(${(960 + flow).toFixed(1)}, 520)`);
       }
       break;
     }
 
-    case 24: { // 25: Badai Monsun & Angin Kencang (Kapal Terombang-ambing)
+    case 24: { // 25: Badai Monsun & Angin Kencang
       const ship = $('#shipStorm25');
       if (ship) {
-        const roll = -10 + waveCycle * 6.5;
-        const heave = waveCos * 18;
+        const roll = -10 + waveCycle * 5.0;
+        const heave = waveCos * 14;
         ship.setAttribute('transform', `translate(960, ${(600 + heave).toFixed(1)}) rotate(${roll.toFixed(2)})`);
       }
       const w1 = $('#wave25a'), w2 = $('#wave25b');
-      if (w1) w1.style.transform = `translate(${(waveCycle * 22).toFixed(1)}px, ${(waveCos * 10).toFixed(1)}px)`;
-      if (w2) w2.style.transform = `translate(${(-waveCycle * 35).toFixed(1)}px, ${(-waveCos * 14).toFixed(1)}px)`;
+      if (w1) w1.style.transform = `translate(${(waveCycle * 16).toFixed(1)}px, ${(waveCos * 7).toFixed(1)}px)`;
+      if (w2) w2.style.transform = `translate(${(-waveCycle * 24).toFixed(1)}px, ${(-waveCos * 10).toFixed(1)}px)`;
       break;
     }
 
     case 25: { // 26: Ombak 3.8 Meter Menghantam Lambung Kiri
       const hull = $('#hullSlam26');
       if (hull) {
-        const slamRoll = -16 + waveCycle * 7.5;
+        const slamRoll = -16 + waveCycle * 6.0;
         hull.setAttribute('transform', `translate(980, 560) rotate(${slamRoll.toFixed(2)})`);
       }
       const gWave = $('#giantWave26');
       if (gWave) {
-        const surge = (waveCycle * 28);
-        gWave.setAttribute('transform', `translate(${(waveCos * 15).toFixed(1)}, ${surge.toFixed(1)})`);
+        const surge = (waveCycle * 22);
+        gWave.setAttribute('transform', `translate(${(waveCos * 11).toFixed(1)}, ${surge.toFixed(1)})`);
       }
       break;
     }
@@ -3220,12 +3237,13 @@ function updateSceneMotion(idx, t) {
     case 26: { // 27: Rantai Lashing Meletup: KLANG!!
       const lbrk = $('#sc27 #lbrkG27');
       if (lbrk) {
-        if (sceneTime < 4.5) {
-          const jitter = Math.sin(sceneTime * 45) * 5;
+        const snapStart = sceneDur * 0.32;
+        if (sceneTime < snapStart) {
+          const jitter = Math.sin(sceneTime * 24) * 3;
           lbrk.setAttribute('transform', `translate(${(960 + jitter).toFixed(1)}, 480)`);
         } else {
-          const pSnap = Math.min(1, (sceneTime - 4.5) / 1.5);
-          const pop = 1 + Math.sin(pSnap * Math.PI) * 0.45;
+          const pSnap = Math.min(1, (sceneTime - snapStart) / 1.5);
+          const pop = 1 + Math.sin(pSnap * Math.PI) * 0.35;
           lbrk.setAttribute('transform', `translate(960, 480) scale(${pop.toFixed(3)})`);
         }
       }
@@ -3235,8 +3253,8 @@ function updateSceneMotion(idx, t) {
     case 27: { // 28: Tronton 28 Ton Meluncur di Dek Licin
       const trk28 = $('#slidingTronton28');
       if (trk28) {
-        const pSlide = Math.min(1, sceneTime / 10.0);
-        const qSlide = pSlide * pSlide; // akselerasi luncuran gravitasi
+        const pSlide = Math.min(1, sceneTime / (sceneDur * 0.85));
+        const qSlide = pSlide * pSlide;
         const slX = 60 - qSlide * 360;
         const slY = qSlide * 95;
         trk28.setAttribute('transform', `translate(${slX.toFixed(1)}, ${slY.toFixed(1)})`);
@@ -3247,8 +3265,9 @@ function updateSceneMotion(idx, t) {
     case 28: { // 29: Efek Domino Tabrakan Palka
       const dom = $('#domG29');
       if (dom) {
-        const pDom = Math.min(1, sceneTime / 9.0);
-        const crash = (sceneTime > 4.2 && sceneTime < 8.0) ? Math.sin(sceneTime * 35) * 11 : 0;
+        const pDom = Math.min(1, sceneTime / (sceneDur * 0.85));
+        const crashStart = sceneDur * 0.32;
+        const crash = (sceneTime > crashStart && sceneTime < (crashStart + 3.0)) ? Math.sin((sceneTime - crashStart) * 22) * 8 * (1 - (sceneTime - crashStart) / 3.0) : 0;
         dom.setAttribute('transform', `translate(${(780 - (pDom * 140) + crash).toFixed(1)}, 560) rotate(-15)`);
       }
       break;
@@ -3257,7 +3276,7 @@ function updateSceneMotion(idx, t) {
     case 29: { // 30: Titik Pusat Gravitasi (G) Melompat ke Kiri
       const gGrp = $('#sc30 #gGrp30');
       if (gGrp) {
-        const pG = Math.min(1, sceneTime / 7.0);
+        const pG = Math.min(1, sceneTime / (sceneDur * 0.8));
         const qG = pG * pG * (3 - 2 * pG);
         gGrp.setAttribute('transform', `translate(${(960 - qG * 180).toFixed(1)}, 500)`);
       }
@@ -3267,7 +3286,7 @@ function updateSceneMotion(idx, t) {
     case 30: { // 31: Air Merangsek Masuk Ramp Door Buritan
       const wSurge = $('#waterSurge31');
       if (wSurge) {
-        const surge = waveCycle * 22 + (p * 50);
+        const surge = waveCycle * 16 + (p * 45);
         wSurge.setAttribute('transform', `translate(0, ${surge.toFixed(1)})`);
       }
       break;
@@ -3276,9 +3295,8 @@ function updateSceneMotion(idx, t) {
     case 32: { // 33: Free Surface Effect (Rumus B^3)
       const b3 = $('#sc33 #b3G33');
       if (b3) {
-        // Kotak formula berguncang elastis mengikuti goyangan air dek
-        const bs = 1 + Math.sin(sceneTime * 2.8) * 0.05;
-        const bRot = Math.sin(sceneTime * 2.2) * 3;
+        const bs = 1 + Math.sin(sceneTime * 1.8) * 0.04;
+        const bRot = Math.sin(sceneTime * 1.4) * 2.5;
         b3.setAttribute('transform', `translate(960, 480) rotate(${bRot.toFixed(1)}) scale(${bs.toFixed(3)})`);
       }
       break;
@@ -3287,8 +3305,8 @@ function updateSceneMotion(idx, t) {
     case 33: { // 34: Kabin Miring 28 Derajat
       const kab = $('#sc34 g[transform*="rotate"]');
       if (kab) {
-        const pKab = Math.min(1, sceneTime / 9.0);
-        const rollDeg = -28 - (pKab * 12) + (waveCycle * 2);
+        const pKab = Math.min(1, sceneTime / (sceneDur * 0.85));
+        const rollDeg = -28 - (pKab * 12) + (waveCycle * 1.8);
         kab.setAttribute('transform', `translate(960, 480) rotate(${rollDeg.toFixed(1)})`);
       }
       break;
@@ -3297,8 +3315,8 @@ function updateSceneMotion(idx, t) {
     case 34: { // 35: Air Masuk Kamar Mesin (Ketinggian Naik)
       const w35 = $('#sc35 rect[fill="#0284C7"]');
       if (w35) {
-        const pWater = Math.min(1, sceneTime / 11.0);
-        const h = 150 + pWater * 130 + Math.sin(sceneTime * 3) * 6;
+        const pWater = Math.min(1, sceneTime / (sceneDur * 0.9));
+        const h = 150 + pWater * 130 + Math.sin(sceneTime * 2) * 4;
         w35.setAttribute('height', h.toFixed(1));
         w35.setAttribute('y', (150 - h).toFixed(1));
       }
@@ -3307,15 +3325,17 @@ function updateSceneMotion(idx, t) {
 
     case 35: { // 36: Blackout Total (Kilatan Korsleting Listrik)
       const blk = $('#blkCircle36');
+      const blkStart = sceneDur * 0.28;
+      const blkMid = sceneDur * 0.50;
       if (blk) {
-        const op = sceneTime < 5.0 ? 1.0 : (sceneTime < 8.0 ? (Math.sin(sceneTime * 24) > 0 ? 1 : 0.05) : 0.3 + Math.sin(sceneTime * 2) * 0.2);
+        const op = sceneTime < blkStart ? 1.0 : (sceneTime < blkMid ? (Math.sin(sceneTime * 16) > 0 ? 1 : 0.05) : 0.3 + Math.sin(sceneTime * 1.5) * 0.15);
         blk.setAttribute('opacity', op.toFixed(2));
       }
       const spark = $('#sparkArc36');
       if (spark) {
-        const isSpark = (sceneTime > 4.5 && sceneTime < 8.0 && Math.sin(sceneTime * 35) > 0);
+        const isSpark = (sceneTime > blkStart && sceneTime < blkMid && Math.sin(sceneTime * 20) > 0);
         spark.setAttribute('opacity', isSpark ? '1' : '0');
-        if (isSpark) spark.setAttribute('transform', `translate(${(180 + Math.random() * 10).toFixed(1)}, ${(-90 + Math.random() * 10).toFixed(1)}) scale(${(0.8 + Math.random() * 0.5).toFixed(2)})`);
+        if (isSpark) spark.setAttribute('transform', `translate(${(180 + Math.random() * 8).toFixed(1)}, ${(-90 + Math.random() * 8).toFixed(1)}) scale(${(0.8 + Math.random() * 0.4).toFixed(2)})`);
       }
       break;
     }
@@ -3323,9 +3343,9 @@ function updateSceneMotion(idx, t) {
     case 36: { // 37: Klinometer 45 Derajat Zona Bahaya
       const kl = $('#sc37 line[stroke="#EF4444"]');
       if (kl) {
-        const pKl = Math.min(1, sceneTime / 7.5);
-        // Jarum bergerak melewati zona merah dengan pantulan redaman
-        const rot = pKl * -46 + Math.sin(sceneTime * 14) * (1 - pKl) * 6;
+        const pKl = Math.min(1, sceneTime / (sceneDur * 0.8));
+        const pKlSmooth = pKl * pKl * (3 - 2 * pKl);
+        const rot = pKlSmooth * -46 + Math.sin(sceneTime * 8) * (1 - pKl) * 4;
         kl.setAttribute('transform', `rotate(${rot.toFixed(1)})`);
       }
       break;
@@ -3334,8 +3354,8 @@ function updateSceneMotion(idx, t) {
     case 37: { // 38: Abandon Ship Stempel Darurat
       const ab = $('#sc38 g[transform*="rotate"]');
       if (ab) {
-        const isTrigger = sceneTime > 3.5;
-        const as = isTrigger ? 1 + Math.sin(sceneTime * 7) * 0.06 : 1.0;
+        const isTrigger = sceneTime > sceneDur * 0.25;
+        const as = isTrigger ? 1 + Math.sin(sceneTime * 4) * 0.04 : 1.0;
         ab.setAttribute('transform', `translate(960, 480) rotate(-6) scale(${as.toFixed(3)})`);
       }
       break;
@@ -3344,7 +3364,7 @@ function updateSceneMotion(idx, t) {
     case 38: { // 39: Berebut ke Dek Kanan
       const run = $('#sc39 g[transform*="translate"]');
       if (run) {
-        const pRun = Math.min(1, sceneTime / 8.0);
+        const pRun = Math.min(1, sceneTime / (sceneDur * 0.85));
         run.setAttribute('transform', `translate(${(960 + pRun * 70).toFixed(1)}, ${(480 - pRun * 35).toFixed(1)})`);
       }
       break;
@@ -3353,10 +3373,10 @@ function updateSceneMotion(idx, t) {
     case 39: { // 40: Rompi Pelampung SOLAS
       const lj = $('#lifejacketG40');
       if (lj) {
-        const float = Math.sin(sceneTime * 2.2) * 8;
-        lj.setAttribute('transform', `translate(960, ${(520 + float).toFixed(1)}) rotate(${(Math.sin(sceneTime * 1.5) * 2.5).toFixed(1)})`);
+        const float = Math.sin(sceneTime * 1.5) * 6;
+        lj.setAttribute('transform', `translate(960, ${(520 + float).toFixed(1)}) rotate(${(Math.sin(sceneTime * 1.0) * 2.0).toFixed(1)})`);
         const strobe = lj.querySelector('circle[fill="#FFFFFF"]');
-        if (strobe) strobe.setAttribute('opacity', Math.sin(sceneTime * 12) > 0.2 ? 1.0 : 0.1);
+        if (strobe) strobe.setAttribute('opacity', Math.sin(sceneTime * 6) > 0.2 ? 1.0 : 0.1);
       }
       break;
     }
@@ -3364,7 +3384,7 @@ function updateSceneMotion(idx, t) {
     case 40: { // 41: Terjun ke Samudra Malam
       const jmp = $('#sc41 g[transform*="rotate"]');
       if (jmp) {
-        const pJmp = Math.min(1, sceneTime / 5.5);
+        const pJmp = Math.min(1, sceneTime / (sceneDur * 0.75));
         const dropY = 460 + pJmp * 260;
         jmp.setAttribute('transform', `translate(960, ${dropY.toFixed(1)}) rotate(${(35 + pJmp * 45).toFixed(1)})`);
       }
@@ -3374,8 +3394,8 @@ function updateSceneMotion(idx, t) {
     case 41: { // 42: Kapal Terbalik 180 Derajat
       const cap = $('#sc42 g[transform*="rotate"]');
       if (cap) {
-        const pCap = Math.min(1, sceneTime / 11.0);
-        const rot = 110 + pCap * 70 + (waveCycle * 2.5);
+        const pCap = Math.min(1, sceneTime / (sceneDur * 0.90));
+        const rot = 110 + pCap * 70 + (waveCycle * 2.0);
         cap.setAttribute('transform', `translate(960, 720) rotate(${rot.toFixed(1)})`);
       }
       break;
@@ -3384,8 +3404,8 @@ function updateSceneMotion(idx, t) {
     case 42: { // 43: Life Raft Mengembang
       const rft = $('#sc43 g[transform*="translate"]');
       if (rft) {
-        const bob = waveCycle * 18;
-        const rot = waveCos * 9;
+        const bob = waveCycle * 14;
+        const rot = waveCos * 6;
         rft.setAttribute('transform', `translate(960, ${(680 + bob).toFixed(1)}) rotate(${rot.toFixed(1)})`);
       }
       break;
@@ -3394,8 +3414,8 @@ function updateSceneMotion(idx, t) {
     case 43: { // 44: Solidaritas di Atas Rakit
       const sol = $('#sc44 g[transform*="translate"]');
       if (sol) {
-        const bob = waveCycle * 12;
-        const rot = waveCos * 4;
+        const bob = waveCycle * 9;
+        const rot = waveCos * 3;
         sol.setAttribute('transform', `translate(960, ${(480 + bob).toFixed(1)}) rotate(${rot.toFixed(1)})`);
       }
       break;
@@ -3404,10 +3424,9 @@ function updateSceneMotion(idx, t) {
     case 44: { // 45: Suar Merah (Hand Flare) Menyala
       const flr = $('#flrCircle45');
       if (flr) {
-        // Cahaya suar magnesium berdenyut dinamis menerangi ombak gelap
-        const r = 260 + Math.sin(sceneTime * 10) * 55;
+        const r = 260 + Math.sin(sceneTime * 6) * 40;
         flr.setAttribute('r', r.toFixed(1));
-        flr.setAttribute('opacity', (0.4 + Math.sin(sceneTime * 12) * 0.3).toFixed(2));
+        flr.setAttribute('opacity', (0.4 + Math.sin(sceneTime * 6) * 0.25).toFixed(2));
       }
       break;
     }
@@ -3415,7 +3434,7 @@ function updateSceneMotion(idx, t) {
     case 45: { // 46: 05:30 WIB Fajar Harapan (Matahari Terbit)
       const sun = $('#sc46 circle[r="180"]');
       if (sun) {
-        const pSun = Math.min(1, sceneTime / 9.0);
+        const pSun = Math.min(1, sceneTime / (sceneDur * 0.85));
         sun.setAttribute('transform', `translate(0, ${(-pSun * 65).toFixed(1)})`);
       }
       break;
@@ -3424,15 +3443,15 @@ function updateSceneMotion(idx, t) {
     case 46: { // 47: Perahu Nelayan Masalembo Tiba Menyelamatkan
       const boat = $('#perahuNelayan47');
       if (boat) {
-        const pBoat = Math.min(1, sceneTime / 11.0);
+        const pBoat = Math.min(1, sceneTime / (sceneDur * 0.85));
         const bx = 1280 - (1 - pBoat) * 220;
-        const bob = waveCycle * 14;
-        boat.setAttribute('transform', `translate(${bx.toFixed(1)}, ${(580 + bob).toFixed(1)}) rotate(${(waveCos * 5).toFixed(1)})`);
+        const bob = waveCycle * 11;
+        boat.setAttribute('transform', `translate(${bx.toFixed(1)}, ${(580 + bob).toFixed(1)}) rotate(${(waveCos * 3.5).toFixed(1)})`);
       }
       const raft = $('#lifeRaft47');
       if (raft) {
-        const rBob = waveCos * 12;
-        raft.setAttribute('transform', `translate(420, ${(640 + rBob).toFixed(1)}) rotate(${(-waveCycle * 4).toFixed(1)})`);
+        const rBob = waveCos * 9;
+        raft.setAttribute('transform', `translate(420, ${(640 + rBob).toFixed(1)}) rotate(${(-waveCycle * 3).toFixed(1)})`);
       }
       break;
     }
@@ -3440,18 +3459,18 @@ function updateSceneMotion(idx, t) {
     case 47: { // 48: 108 Nyawa Selamat (Helikopter & Kapal Basarnas)
       const heli = $('#heliSAR48');
       if (heli) {
-        const hBob = Math.sin(sceneTime * 3.0) * 8;
-        const hTilt = Math.sin(sceneTime * 1.5) * 4;
-        heli.setAttribute('transform', `translate(${(420 + Math.sin(sceneTime * 0.8) * 20).toFixed(1)}, ${(320 + hBob).toFixed(1)}) rotate(${hTilt.toFixed(1)})`);
+        const hBob = Math.sin(sceneTime * 1.8) * 6;
+        const hTilt = Math.sin(sceneTime * 1.0) * 3;
+        heli.setAttribute('transform', `translate(${(420 + Math.sin(sceneTime * 0.6) * 16).toFixed(1)}, ${(320 + hBob).toFixed(1)}) rotate(${hTilt.toFixed(1)})`);
       }
       const boat = $('#boatSAR48');
       if (boat) {
-        const bBob = waveCycle * 10;
-        boat.setAttribute('transform', `translate(1320, ${(680 + bBob).toFixed(1)}) rotate(${(waveCos * 3).toFixed(1)})`);
+        const bBob = waveCycle * 8;
+        boat.setAttribute('transform', `translate(1320, ${(680 + bBob).toFixed(1)}) rotate(${(waveCos * 2.5).toFixed(1)})`);
       }
       const sav = $('#savG48');
       if (sav) {
-        const ss = 1 + Math.sin(sceneTime * 2.0) * 0.035;
+        const ss = 1 + Math.sin(sceneTime * 1.4) * 0.025;
         sav.setAttribute('transform', `translate(960, 480) scale(${ss.toFixed(3)})`);
       }
       break;
@@ -3459,17 +3478,18 @@ function updateSceneMotion(idx, t) {
 
     case 49: { // 50: Salam Maritim Indonesia
       const anc = $('#sc50 g[transform*="translate"]');
-      if (anc) anc.setAttribute('transform', `translate(960, 480) rotate(${(Math.sin(sceneTime * 1.5) * 5.5).toFixed(1)})`);
+      if (anc) anc.setAttribute('transform', `translate(960, 480) rotate(${(Math.sin(sceneTime * 1.1) * 4.0).toFixed(1)})`);
       break;
     }
   }
 }
+
 const tl = gsap.timeline({ paused: true });
 tl.to({}, { duration: DUR });
 
 // 60 FPS Native Ticker — sinkron mulus dengan alur panggung
 gsap.ticker.add(() => {
-  if (isPaused || curIdx < 0) return;
+  if (window.IS_RENDERING || isPaused || curIdx < 0) return;
   const sceneElapsed = (performance.now() - sceneStartTime) / 1000;
   const totalT = (SCENE_STARTS[curIdx] || 0) + sceneElapsed;
   if (tl) tl.time(totalT, false);

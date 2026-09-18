@@ -171,6 +171,7 @@ def main():
                 break
             time.sleep(0.5)
         time.sleep(1.0)
+        cdp.eval("if (window.stopTicker) window.stopTicker(); window.IS_RENDERING = true;")
 
         print("Mulai render frame...")
         for i in range(total_frames):

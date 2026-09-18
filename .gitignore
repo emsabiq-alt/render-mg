@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.jpg
+*.jpeg
+*.png
+*.mp4
+*.m4a
+downloaded/
+downloaded_fixed/
+chunks/
+output/
+list.txt
