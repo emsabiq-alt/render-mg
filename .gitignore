@@ -4,7 +4,7 @@ __pycache__/
 *.jpeg
 *.png
 *.mp4
-*.m4a
+!audio/master_audio.m4a
 downloaded/
 downloaded_fixed/
 chunks/

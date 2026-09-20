@@ -261,24 +261,43 @@ def main():
     print(f"\nRender selesai dalam {render_elapsed:.1f} detik (Rata-rata: {avg_fps:.2f} fps)!")
 
     # Gabung audio untuk scene dalam rentang ini
-    audio_concat_file = tmp_dir / "audio_concat.txt"
-    ada_audio = False
-    with open(audio_concat_file, "w", encoding="utf-8") as f:
-        for sc in range(s_idx + 1, e_idx + 1):
-            sc_audio_name = audio_map.get(sc, f"sc{sc:02d}.mp3")
-            sc_file = audio_dir / sc_audio_name
-            if sc_file.exists():
-                f.write(f"file '{sc_file.resolve().as_posix()}'\n")
-                ada_audio = True
-
     chunk_audio = tmp_dir / "chunk_audio.m4a"
-    if ada_audio:
-        subprocess.run([
-            "ffmpeg", "-y", "-f", "concat", "-safe", "0",
-            "-i", str(audio_concat_file),
-            "-c:a", "aac", "-b:a", "192k",
+    ada_audio = False
+
+    # 1. Cek apakah ada master_audio.m4a (audio penuh: VO + BGM + SFX foley)
+    master_audio_file = audio_dir / "master_audio.m4a"
+    if master_audio_file.exists():
+        chunk_dur = end_time - start_time
+        res_slice = subprocess.run([
+            "ffmpeg", "-y",
+            "-ss", f"{start_time:.3f}",
+            "-t", f"{chunk_dur:.3f}",
+            "-i", str(master_audio_file),
+            "-c:a", "copy",
             str(chunk_audio)
-        ], check=True, capture_output=True)
+        ], capture_output=True)
+        if chunk_audio.exists() and chunk_audio.stat().st_size > 2000:
+            ada_audio = True
+            print(f"Menggunakan irisan master audio (VO + BGM + SFX) dari {start_time:.2f}s s/d {end_time:.2f}s")
+
+    # 2. Fallback: Concat narasi individual jika master_audio belum ada
+    if not ada_audio:
+        audio_concat_file = tmp_dir / "audio_concat.txt"
+        with open(audio_concat_file, "w", encoding="utf-8") as f:
+            for sc in range(s_idx + 1, e_idx + 1):
+                sc_audio_name = audio_map.get(sc, f"sc{sc:02d}.mp3")
+                sc_file = audio_dir / sc_audio_name
+                if sc_file.exists():
+                    f.write(f"file '{sc_file.resolve().as_posix()}'\n")
+                    ada_audio = True
+
+        if ada_audio:
+            subprocess.run([
+                "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                "-i", str(audio_concat_file),
+                "-c:a", "aac", "-b:a", "192k",
+                str(chunk_audio)
+            ], check=True, capture_output=True)
 
     print("Menggabungkan frame + audio dengan FFmpeg...")
     ffmpeg_cmd = [
